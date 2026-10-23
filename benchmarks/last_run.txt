@@ -1,0 +1,151 @@
+dtypeinfer benchmarks - python 3.11.9
+
+1. per-type accuracy against synthetic ground truth
+---------------------------------------------------
+columns: 120 generated from 15 labelled types, 2% of cells dirtied
+
+  type                 n precision   recall       F1
+  integer              8    1.000    1.000    1.000
+  float                8    1.000    1.000    1.000
+  percent              8    1.000    1.000    1.000
+  currency             8    1.000    1.000    1.000
+  boolean              8    1.000    1.000    1.000
+  date                 8    1.000    1.000    1.000
+  datetime             8    1.000    1.000    1.000
+  time                 8    1.000    1.000    1.000
+  uuid                 8    1.000    1.000    1.000
+  email                8    1.000    1.000    1.000
+  url                  8    1.000    1.000    1.000
+  ipv4                 8    1.000    1.000    1.000
+  ipv6                 8    1.000    1.000    1.000
+  categorical          8    1.000    1.000    1.000
+  text                 8    1.000    1.000    1.000
+  macro avg          120    1.000    1.000    1.000
+  micro avg: 1.000 - 120 of 120 columns named correctly
+  claimed without review (`clean`): 112/120
+
+2. which types got confused with which
+--------------------------------------
+  no wrong names in this run
+
+  on ambiguous columns, the second type that fits every value just as
+  well (a tie at min_fit) is the real risk, not a wrong name:
+  column               chosen      also fits     flagged for review
+  compact dates        date        integer=1.00  yes
+
+  columns with a rival type that clears min_fit too: 1 of 14;
+  review-noted: 1, decided silently: 0.
+  Counting every note, 8 of 14 land in the review queue - section 4
+  prints why. A silently decided coin-flip is the failure mode this
+  table exists to catch.
+
+3. accuracy and review rate as columns get dirtier
+--------------------------------------------------
+  dirt    type             named  reviewed      conf
+  0.00    integer            20/20        0/20     1.000
+  0.00    date               20/20        0/20     1.000
+  0.00    currency           20/20        0/20     1.000
+  0.00    email              20/20        0/20     1.000
+  0.00    ipv4               20/20        0/20     1.000
+  0.02    integer            20/20        0/20     0.998
+  0.02    date               20/20        0/20     0.993
+  0.02    currency           20/20        0/20     0.994
+  0.02    email              20/20        0/20     0.992
+  0.02    ipv4               20/20        0/20     0.992
+  0.10    integer            20/20        2/20     0.981
+  0.10    date               20/20        0/20     0.967
+  0.10    currency           20/20        2/20     0.968
+  0.10    email              20/20        2/20     0.968
+  0.10    ipv4               20/20        1/20     0.967
+  0.25    integer            20/20       11/20     0.949
+  0.25    date               20/20       20/20     0.912
+  0.25    currency           20/20       20/20     0.914
+  0.25    email              20/20       20/20     0.913
+  0.25    ipv4               20/20       19/20     0.915
+
+4. what the notes look like on columns that are genuinely ambiguous
+-------------------------------------------------------------------
+  zip codes            integer     conf=1.000  leading_zeros:40; identifier_like; low_cardinality:5/100
+  flag column          integer     conf=1.000  boolean_like; low_cardinality:2/100
+  eu decimals          float       conf=1.000  decimal_comma:60; low_cardinality:3/60
+  ambiguous tail       float       conf=1.000  ambiguous_three_digit_tail:dot=60,comma=0,style=us; low_cardinality:3/60
+  slash dates          date        conf=1.000  order_ambiguous:60; low_cardinality:3/60
+  unpadded dates       date        conf=1.000  order_ambiguous:40; two_digit_year:40; low_cardinality:2/40
+  compact dates        date        conf=1.000  also_fits:integer=1.00,float=1.00; low_cardinality:2/40
+  mixed currency       currency    conf=1.000  low_cardinality:3/60
+  sparse dates         date        conf=1.000  has_nulls:0.60; low_cardinality:2/40
+  leading-zero ip      ipv4        conf=0.667  unfit_values:20; leading_zero_octets_rejected:20; low_cardinality:3/60
+  inconsistent decimals float       conf=1.000  decimal_comma:20; decimal_separator_inconsistent; low_cardinality:2/40
+  times only           time        conf=1.000  low_cardinality:3/60
+  us dates             date        conf=1.000  low_cardinality:2/40
+  epoch seconds        integer     conf=1.000  low_cardinality:2/40
+
+5. cost of inference: full scan versus reservoir sample
+-------------------------------------------------------
+  mode         population sample_size   wall (s)  peak (KB)  types named
+  full scan          2000         all     0.1421        242      integer
+  full scan          2000         all     0.1554        226         date
+  full scan          2000         all     0.3556        403     currency
+  full scan          2000         all     1.4100        351        email
+  reservoir          2000        1000     0.0737         86      integer
+  reservoir          2000        1000     0.0794         77         date
+  reservoir          2000        1000     0.1854        166     currency
+  reservoir          2000        1000     0.5748        140        email
+  full scan         20000         all     1.4895       3407      integer
+  full scan         20000         all     1.6283       1319         date
+  full scan         20000         all     3.5033       5001     currency
+  full scan         20000         all    11.5793       2089        email
+  reservoir         20000        1000     0.1448         86      integer
+  reservoir         20000        1000     0.1391         77         date
+  reservoir         20000        1000     0.2470        166     currency
+  reservoir         20000        1000     0.6500        140        email
+
+  same types either way. Full scan peak goes from 351 KB at 2000 values to
+  2089 KB at 20000 values - it grows with the column. The reservoir holds 140 KB
+  at both sizes, and is the only option when the column will not fit in
+  memory. Sampling is why the 1000-value default costs the same for a
+  10k-row and a 10M-row table.
+
+6. cost per candidate parser - why a column takes 13 passes
+-----------------------------------------------------------
+  column          uuid     email      ipv6      ipv4       url  datetime      date      time   percent  currency   boolean   integer     float
+  integer       0.0011    0.0007    0.0007    0.0026    0.0009    0.0005    0.0022    0.0009    0.0033    0.0056    0.0007    0.0021    0.0054
+  float         0.0009    0.0007    0.0008    0.0055    0.0009    0.0005    0.0023    0.0010    0.0025    0.0049    0.0007    0.0111    0.0144
+  date          0.0016    0.0010    0.0012    0.0042    0.0022    0.0008    0.0082    0.0017    0.0030    0.0098    0.0006    0.0066    0.0046
+  currency      0.0015    0.0008    0.0013    0.0049    0.0016    0.0007    0.0029    0.0012    0.0019    0.0349    0.0010    0.0030    0.0019
+  email         0.0009    0.0093    0.0007    0.0040    0.0012    0.0006    0.1778    0.0010    0.0017    0.0137    0.0007    0.0029    0.0018
+  url           0.0009    0.0007    0.0007    0.0020    0.0110    0.4356    0.1697    0.0010    0.0017    0.0174    0.0007    0.0032    0.0016
+  ipv6          0.0008    0.0006    0.0065    0.0029    0.0009    0.0018    0.1265    0.0009    0.0020    0.0095    0.0007    0.0031    0.0020
+  text          0.0008    0.0006    0.0006    0.0027    0.0009    0.0005    0.1658    0.0008    0.0014    0.0361    0.0008    0.0029    0.0017
+
+  times are for 2000 values of that column; every column is scored against
+  all 13 candidates, so the scoring pass costs the sum of a row above.
+  The two cells that stand out are the date parser run over email/url/
+  text and the datetime parser run over url: those values are long, so
+  each separator split produces a substring long enough to try, and
+  nothing matches until the whole value has been worked through. The
+  cheap guards - a colon test before the datetime scan, a letter test
+  before `strptime` - are what keep the other cells near zero.
+
+7. side by side with pandas read_csv inference
+----------------------------------------------
+  column       pandas dtype     dtypeinfer   pandas values
+  qty          int64            integer      np.int64(474354) yes
+  price        float64          float        np.float64(441.93) yes
+  placed       object           date         '2001-11-02' -
+  visitor_ip   object           ipv4         '73.128.181.72' -
+  event_id     object           uuid         '7428f6cd-ab15-8606-f302-dd4 -
+  cost         object           currency     '¥5,589.70' -
+  zip          int64            integer      np.int64(12158) yes
+  flag         object           boolean      'TRUE' -
+  region       object           categorical  'cream' yes
+
+  dtypeinfer named a structured type for 8/9 columns; pandas reports
+  int64/float64/bool/object and stops, so the remaining columns are just
+  `object` to it. Different job, not a missed one - but the `zip` row is
+  the one to look at: pandas kept the int64 and dropped the leading zero
+  (first value np.int64(12158)), while dtypeinfer called it 'integer' and wrote down why a
+  loader should not trust that name:
+      leading_zeros:30
+      identifier_like
+  review queue for this table: 1/9 columns - zip
