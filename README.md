@@ -49,16 +49,24 @@ coerce_column(values, result, on_error="null").values[:4]
 A whole file, streaming, with a European decimal style resolved from the data:
 
 ```python
-table = infer_csv("orders.csv", decimal_style="eu")
+from dtypeinfer import infer_csv
+import os, tempfile
 
-table.types
+path = os.path.join(tempfile.mkdtemp(), "orders.csv")
+with open(path, "w", newline="", encoding="utf-8") as handle:
+    handle.write("id;when;total\n1;2026-01-05;12,50\n2;2026-02-11;7,30\n3;;99,99\n")
+
+# ';' is the field separator here, so ',' is free to mean the decimal mark.
+table = infer_csv(path, decimal_style="eu")
+
+print(table.types)
 # {'id': 'integer', 'when': 'date', 'total': 'float'}
-table.summary()
+print(table.summary())
 # {'columns': 3, 'population': 3, 'types': {'integer': 1, 'date': 1, 'float': 1},
 #  'needs_review': 0}
-table.columns["when"].notes        # ['has_nulls:0.33']
-table.columns["total"].notes       # ['decimal_comma:3']
-table.needs_review                 # columns worth a human eye, by name
+print(table.columns["when"].notes)      # ['has_nulls:0.33']
+print(table.columns["total"].notes)     # ['decimal_comma:3']
+print(list(table.needs_review))         # [] - nothing here needs a human eye
 ```
 
 ## What you get back
